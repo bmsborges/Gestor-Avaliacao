@@ -1,42 +1,67 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
+import io
 
-st.set_page_config(page_title="Consolidador de Excel", layout="centered")
+st.set_page_config(page_title="Consolidador de Grelhas UFCD", layout="wide")
 
-st.title("📂 Recolha de Dados Excel")
-st.markdown("Carrega os teus ficheiros e eu trato de os juntar numa única tabela.")
+st.title("📊 Recolha e União de Dados UFCD")
+st.markdown("""
+Esta aplicação extrai os dados dos formandos das grelhas de avaliação (UFCD 9889) 
+e junta tudo num único ficheiro consolidado.
+""")
 
-# 1. Upload de múltiplos ficheiros
-uploaded_files = st.file_uploader("Seleciona os ficheiros Excel", type=["xlsx", "xls"], accept_multiple_files=True)
+# 1. Upload dos Ficheiros
+uploaded_files = st.file_uploader("Selecione os ficheiros Excel (.xlsx ou .xls)", type=["xlsx", "xls"], accept_multiple_files=True)
+
+def processar_grelha(file):
+    # Ler o ficheiro ignorando as linhas de cabeçalho decorativas
+    # Ajustamos para começar a ler onde os nomes dos formandos costumam estar
+    df = pd.read_excel(file, skiprows=12) # Salta os logos e títulos
+    
+    # Limpeza básica: remover colunas totalmente vazias e linhas sem nome
+    df = df.dropna(subset=[df.columns[2]]) # Assume que o nome está na 3ª coluna
+    
+    # Renomear colunas para algo legível (ajustado à sua estrutura)
+    colunas_uteis = {
+        df.columns[0]: "Nº",
+        df.columns[2]: "Nome do Formando",
+        df.columns[18]: "Nota Teórica",
+        df.columns[28]: "Ferramentas (0.6)",
+        df.columns[38]: "Equipamentos (0.2)",
+        df.columns[48]: "Estabilização (0.2)",
+        df.columns[58]: "Média Final",
+        df.columns[67]: "Situação"
+    }
+    df = df.rename(columns=colunas_uteis)
+    
+    # Manter apenas as colunas que nos interessam
+    return df[["Nº", "Nome do Formando", "Nota Teórica", "Ferramentas (0.6)", "Equipamentos (0.2)", "Estabilização (0.2)", "Média Final", "Situação"]]
 
 if uploaded_files:
-    all_data = []
+    lista_dfs = []
     
     for file in uploaded_files:
-        # Lemos cada ficheiro
-        df = pd.read_excel(file)
-        # Adicionamos uma coluna para saber de que ficheiro veio o dado (opcional)
-        df['Fonte'] = file.name
-        all_data.append(df)
-    
-    # 2. Juntar tudo (Empilhar)
-    df_final = pd.concat(all_data, ignore_index=True)
-    
-    st.success(f"Sucesso! {len(uploaded_files)} ficheiros lidos.")
-    st.write("### Pré-visualização dos Dados:")
-    st.dataframe(df_final.head(10)) # Mostra as primeiras 10 linhas
+        try:
+            dados = processar_grelha(file)
+            dados['Origem'] = file.name # Para saber de que ficheiro veio a nota
+            lista_dfs.append(dados)
+        except Exception as e:
+            st.error(f"Erro ao processar {file.name}: {e}")
 
-    # 3. Preparar o download
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_final.to_excel(writer, index=False, sheet_name='Dados_Consolidados')
-    
-    processed_data = output.getvalue()
+    if lista_dfs:
+        df_final = pd.concat(lista_dfs, ignore_index=True)
+        
+        st.subheader("Visualização dos Dados Consolidados")
+        st.dataframe(df_final)
 
-    st.download_button(
-        label="📥 Descarregar Ficheiro Consolidado",
-        data=processed_data,
-        file_name="dados_recolhidos_final.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # 2. Botão para Download
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df_final.to_excel(writer, index=False, sheet_name='Consolidado')
+        
+        st.download_button(
+            label="📥 Descarregar Excel Consolidado",
+            data=output.getvalue(),
+            file_name="Avaliacao_Total_UFCD.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
