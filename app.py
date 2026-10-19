@@ -1,76 +1,102 @@
-import streamlit as st
+import io
 import pandas as pd
+import streamlit as st
 
 st.set_page_config(page_title="Grelha de Avaliação de Formandos", layout="wide")
 
-st.title("📋 Gerador de Grelhas de Avaliação")
-st.write("Carregue os ficheiros Excel correspondentes para compilar a lista de formandos e os parâmetros de avaliação.")
+st.title("📋 Gerador de Grelhas de Avaliação (Parâmetros em Colunas)")
+st.write(
+    "Carregue os ficheiros Excel para compilar a lista de formandos e os parâmetros"
+    " organizados por colunas de grupos."
+)
 
-# Estrutura em duas colunas para o carregamento dos ficheiros
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("1. Ficheiro dos Formandos")
-    file_formandos = st.file_uploader("Selecione o ficheiro dos Formandos (.xlsx, .xls)", type=["xlsx", "xls"], key="formandos")
+    file_formandos = st.file_uploader(
+        "Selecione o ficheiro dos Formandos (.xlsx, .xls)",
+        type=["xlsx", "xls"],
+        key="formandos",
+    )
 
 with col2:
-    st.subheader("2. Ficheiro de Avaliação")
-    file_parametros = st.file_uploader("Selecione o ficheiro dos Parâmetros (.xlsx, .xls)", type=["xlsx", "xls"], key="parametros")
+    st.subheader("2. Ficheiro de Avaliação / Parâmetros")
+    file_parametros = st.file_uploader(
+        "Selecione o ficheiro dos Parâmetros (.xlsx, .xls)",
+        type=["xlsx", "xls"],
+        key="parametros",
+    )
 
 if file_formandos and file_parametros:
     try:
-        # 1. Leitura e extração dos formandos (Coluna K -> índice 10)
+        # 1. Extrair formandos (Coluna K -> índice 10)
         df_formandos = pd.read_excel(file_formandos)
-        
-        # Verificar se a coluna K existe (A=0, B=1, ..., K=10)
+
         if df_formandos.shape[1] > 10:
-            # Extrai a coluna K e remove valores vazios
             formandos = df_formandos.iloc[:, 10].dropna().tolist()
-            # Remove o cabeçalho se corresponder ao nome da coluna
             seccao_header = df_formandos.columns[10]
             if formandos and formandos[0] == seccao_header:
                 formandos = formandos[1:]
         else:
-            st.error("O ficheiro de formandos não tem colunas suficientes (Coluna K não encontrada).")
+            st.error(
+                "O ficheiro de formandos não tem colunas suficientes (Coluna K"
+                " não encontrada)."
+            )
             formandos = []
 
-        # 2. Leitura dos parâmetros de avaliação
+        # 2. Processar ficheiro de parâmetros (Várias Colunas = Vários Grupos)
         df_param = pd.read_excel(file_parametros)
-        # Seleção de colunas para os parâmetros
-        coluna_parametro = st.selectbox("Selecione a coluna que contém os Parâmetros de Avaliação:", df_param.columns)
-        parametros = df_param[coluna_parametro].dropna().tolist()
 
-        if formandos and parametros:
-            st.success(f"✓ Carregados **{len(formandos)} formandos** e **{len(parametros)} parâmetros**.")
+        st.markdown("---")
+        st.subheader("⚙️ Seleção das Colunas de Parâmetros")
 
-            # 3. Construção da tabela/grelha consolidada
-            # As linhas serão os formandos e as colunas os parâmetros de avaliação
-            dados_grelha = {"Nome do Formando": formandos}
-            for param in parametros:
-                dados_grelha[str(param)] = [None] * len(formandos)
+        # Selecionar quais as colunas do Excel que representam grupos de avaliação
+        colunas_selecionadas = st.multiselect(
+            "Selecione as colunas que contêm os parâmetros a incluir:",
+            options=df_param.columns.tolist(),
+            default=df_param.columns.tolist(),
+        )
 
-            df_grelha = pd.DataFrame(dados_grelha)
+        parametros_agrupados = []
 
-            st.subheader("📊 Grelha de Avaliação Gerada")
-            st.write("Pode preencher as notas/avaliações diretamente na tabela abaixo:")
+        # Interpolação/extração dos parâmetros mantendo o grupo (nome da coluna)
+        for col_grupo in colunas_selecionadas:
+            # Obtém os parâmetros da coluna ignorando células vazias
+            itens = df_param[col_grupo].dropna().tolist()
+            for item in itens:
+                parametros_agrupados.append(f"{col_grupo} - {item}")
 
-            # Tabela editável diretamente na aplicação
+        # 3. Gerar a Grelha Consolidada
+        if formandos and parametros_agrupados:
+            st.success(
+                f"✓ Carregados **{len(formandos)} formandos** e"
+                f" **{len(parametros_agrupados)} parâmetros** distribuídos por"
+                f" **{len(colunas_selecionadas)} grupos**."
+            )
+
+            # Criar a estrutura do DataFrame
+            dados = {"Nome do Formando": formandos}
+            for p in parametros_agrupados:
+                dados[str(p)] = [None] * len(formandos)
+
+            df_grelha = pd.DataFrame(dados)
+
+            st.subheader("📊 Grelha de Avaliação Final")
             df_editado = st.data_editor(df_grelha, num_rows="dynamic")
 
             # 4. Exportação para Excel
-            output_name = "grelha_avaliacao_preenchida.xlsx"
-            
-            # Converter DataFrame editado para buffer Excel
-            import io
             buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df_editado.to_excel(writer, index=False, sheet_name='Avaliação')
-            
+            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                df_editado.to_excel(writer, index=False, sheet_name="Avaliação")
+
             st.download_button(
                 label="📥 Descarregar Grelha em Excel",
                 data=buffer.getvalue(),
-                file_name=output_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                file_name="grelha_avaliacao_colunas.xlsx",
+                mime=(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ),
             )
 
     except Exception as e:
