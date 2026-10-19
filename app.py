@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-st.title("🎓 Sistema de Gestão de Avaliações")
+st.title("🎓 Ola ola Sistema de Gestão de Avaliações")
 
 # 1. Upload dos Ficheiros
 file_alunos = st.file_uploader("Carregar Ficheiro de Alunos (Excel)", type=["xlsx"])
