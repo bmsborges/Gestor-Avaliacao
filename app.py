@@ -2,83 +2,56 @@ import io
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Grelha de Avaliação de Formandos", layout="wide")
+st.set_page_config(page_title="Grelha de Avaliação Prática", layout="wide")
 
-st.title("📋 Gerador de Grelhas de Avaliação")
+st.title("📋 Grelha de Avaliação Prática por Formando")
 st.write(
-    "Carregue os ficheiros Excel (incluindo ficheiros com Macros `.xlsm`) para"
-    " compilar a lista de formandos e os parâmetros."
+    "Preencha a avaliação prática de cada formando utilizando a escala estrita"
+    " de **1, 3 ou 5** por parâmetro."
 )
 
+# 1. Carregamento dos ficheiros
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("1. Ficheiro dos Formandos")
     file_formandos = st.file_uploader(
-        "Selecione o ficheiro dos Formandos (.xlsx, .xls, .xlsm, .csv)",
+        "1. Ficheiro dos Formandos (.xlsx, .xls, .xlsm, .csv)",
         type=["xlsx", "xls", "xlsm", "csv"],
         key="formandos",
     )
 
 with col2:
-    st.subheader("2. Ficheiro de Avaliação (com Macro)")
     file_parametros = st.file_uploader(
-        "Selecione o ficheiro dos Parâmetros (.xlsx, .xls, .xlsm, .csv)",
+        "2. Ficheiro dos Parâmetros (.xlsx, .xls, .xlsm, .csv)",
         type=["xlsx", "xls", "xlsm", "csv"],
         key="parametros",
     )
 
 
-def carregar_ficheiro_excel_ou_macro(uploaded_file):
-    """Lê ficheiros Excel normais (.xlsx), com Macros (.xlsm), antigos (.xls) ou CSV."""
+def carregar_ficheiro(uploaded_file):
+    """Lê ficheiros Excel (.xlsx/.xls/.xlsm) ou CSV."""
     nome = uploaded_file.name.lower()
-
-    # 1. Se for CSV
     if nome.endswith(".csv"):
         try:
             return pd.read_csv(uploaded_file)
         except Exception:
             uploaded_file.seek(0)
             return pd.read_csv(uploaded_file, sep=";")
-
-    # 2. Tenta abrir ficheiros Excel / Ficheiros com Macro (.xlsm / .xlsx)
     try:
-        # data_only=True garante que lemos os VALORES resultantes das fórmulas/macros, e não as fórmulas
         return pd.read_excel(uploaded_file, engine="openpyxl")
     except Exception:
-        pass
-
-    # 3. Tenta como Excel antigo (.xls)
-    uploaded_file.seek(0)
-    try:
-        return pd.read_excel(uploaded_file, engine="xlrd")
-    except Exception:
-        pass
-
-    # 4. Tenta como tabela HTML (exportações comuns de sistemas de formação)
-    uploaded_file.seek(0)
-    try:
-        tables = pd.read_html(uploaded_file)
-        if tables:
-            return tables[0]
-    except Exception:
-        pass
-
-    # 5. Tenta como texto delimitado
-    uploaded_file.seek(0)
-    try:
-        return pd.read_csv(uploaded_file, sep=None, engine="python")
-    except Exception:
-        pass
-
-    raise ValueError(f"Não foi possível ler o ficheiro '{uploaded_file.name}'.")
+        uploaded_file.seek(0)
+        try:
+            return pd.read_excel(uploaded_file, engine="xlrd")
+        except Exception:
+            uploaded_file.seek(0)
+            return pd.read_excel(uploaded_file)
 
 
 if file_formandos and file_parametros:
     try:
-        # 1. Extrair formandos (Coluna K -> índice 10)
-        df_formandos = carregar_ficheiro_excel_ou_macro(file_formandos)
-
+        # Extrair Formandos (Coluna K -> índice 10)
+        df_formandos = carregar_ficheiro(file_formandos)
         if df_formandos.shape[1] > 10:
             formandos = df_formandos.iloc[:, 10].dropna().tolist()
             seccao_header = df_formandos.columns[10]
@@ -91,65 +64,109 @@ if file_formandos and file_parametros:
             )
             formandos = []
 
-        # 2. Processar ficheiro de parâmetros (com Macro)
-        # Caso o ficheiro tenha várias abas/folhas criadas pela Macro, permite escolher a aba
+        # Extrair Parâmetros da Macro/Excel
         excel_param = pd.ExcelFile(file_parametros, engine="openpyxl")
-        folhas_disponiveis = excel_param.sheet_names
+        folhas = excel_param.sheet_names
 
         st.markdown("---")
-        st.subheader("⚙️ Configuração dos Parâmetros da Macro")
-
-        if len(folhas_disponiveis) > 1:
-            aba_selecionada = st.selectbox(
-                "O ficheiro com Macro tem várias folhas. Selecione a folha que contém os parâmetros:",
-                options=folhas_disponiveis,
+        if len(folhas) > 1:
+            aba = st.selectbox(
+                "Selecione a folha que contém os Parâmetros de Avaliação:",
+                options=folhas,
             )
             df_param = pd.read_excel(
-                file_parametros, sheet_name=aba_selecionada, engine="openpyxl"
+                file_parametros, sheet_name=aba, engine="openpyxl"
             )
         else:
             df_param = pd.read_excel(file_parametros, engine="openpyxl")
 
-        # Seleção das colunas que contêm os parâmetros
         colunas_selecionadas = st.multiselect(
-            "Selecione as colunas da folha que contêm os parâmetros de avaliação:",
+            "Selecione as colunas de parâmetros a incluir:",
             options=df_param.columns.tolist(),
             default=df_param.columns.tolist(),
         )
 
-        parametros_agrupados = []
+        parametros = []
+        for col in colunas_selecionadas:
+            for item in df_param[col].dropna().tolist():
+                parametros.append(f"{col} - {item}")
 
-        for col_grupo in colunas_selecionadas:
-            itens = df_param[col_grupo].dropna().tolist()
-            for item in itens:
-                parametros_agrupados.append(f"{col_grupo} - {item}")
+        if formandos and parametros:
+            # Estado da sessão para guardar as notas preenchidas
+            if "avaliacoes" not in st.session_state:
+                st.session_state.avaliacoes = {
+                    f: {p: 1 for p in parametros} for f in formandos
+                }
 
-        # 3. Gerar a Grelha Consolidada
-        if formandos and parametros_agrupados:
-            st.success(
-                f"✓ Carregados **{len(formandos)} formandos** e"
-                f" **{len(parametros_agrupados)} parâmetros** da folha de"
-                " avaliação."
+            st.subheader("👤 Seleção do Formando")
+            formando_selecionado = st.selectbox(
+                "Escolha o formando para preencher a grelha prática:",
+                options=formandos,
             )
 
-            dados = {"Nome do Formando": formandos}
-            for p in parametros_agrupados:
-                dados[str(p)] = [None] * len(formandos)
+            st.markdown(f"### 📝 Grelha Prática: **{formando_selecionado}**")
 
-            df_grelha = pd.DataFrame(dados)
+            # Construir formulário individual de avaliação (opções 1, 3, 5)
+            with st.form(key=f"form_{formando_selecionado}"):
+                novas_notas = {}
+                cols = st.columns(2)
 
-            st.subheader("📊 Grelha de Avaliação Final")
-            df_editado = st.data_editor(df_grelha, num_rows="dynamic")
+                for idx, param in enumerate(parametros):
+                    col_idx = idx % 2
+                    val_atual = st.session_state.avaliacoes[
+                        formando_selecionado
+                    ].get(param, 1)
 
-            # 4. Exportação para Excel
+                    with cols[col_idx]:
+                        nota = st.selectbox(
+                            label=param,
+                            options=[1, 3, 5],
+                            index=[1, 3, 5].index(val_atual),
+                            key=f"{formando_selecionado}_{param}",
+                        )
+                        novas_notas[param] = nota
+
+                submetido = st.form_submit_button("💾 Guardar Avaliação do Formando")
+                if submetido:
+                    st.session_state.avaliacoes[formando_selecionado] = (
+                        novas_notas
+                    )
+                    st.success(
+                        f"Avaliação guardada com sucesso para"
+                        f" **{formando_selecionado}**!"
+                    )
+
+            # Resumo Geral e Exportação
+            st.markdown("---")
+            st.subheader("📊 Resumo de Todos os Formandos")
+
+            # Montar a tabela resumo com médias
+            dados_resumo = []
+            for f in formandos:
+                linha = {"Nome do Formando": f}
+                notas_f = st.session_state.avaliacoes[f]
+                soma = 0
+                for p in parametros:
+                    val = notas_f.get(p, 1)
+                    linha[p] = val
+                    soma += val
+                linha["Média Prática"] = round(soma / len(parametros), 2)
+                dados_resumo.append(linha)
+
+            df_resumo = pd.DataFrame(dados_resumo)
+            st.dataframe(df_resumo, use_container_width=True)
+
+            # Exportação Excel
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                df_editado.to_excel(writer, index=False, sheet_name="Avaliação")
+                df_resumo.to_excel(
+                    writer, index=False, sheet_name="Avaliação Prática"
+                )
 
             st.download_button(
-                label="📥 Descarregar Grelha em Excel",
+                label="📥 Descarregar Grelha Prática Completa (Excel)",
                 data=buffer.getvalue(),
-                file_name="grelha_avaliacao_macro.xlsx",
+                file_name="grelha_avaliacao_pratica_1_3_5.xlsx",
                 mime=(
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ),
