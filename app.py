@@ -15,23 +15,42 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("1. Ficheiro dos Formandos")
     file_formandos = st.file_uploader(
-        "Selecione o ficheiro dos Formandos (.xlsx, .xls)",
-        type=["xlsx", "xls"],
+        "Selecione o ficheiro dos Formandos (.xlsx, .xls, .csv)",
+        type=["xlsx", "xls", "csv"],
         key="formandos",
     )
 
 with col2:
     st.subheader("2. Ficheiro de Avaliação / Parâmetros")
     file_parametros = st.file_uploader(
-        "Selecione o ficheiro dos Parâmetros (.xlsx, .xls)",
-        type=["xlsx", "xls"],
+        "Selecione o ficheiro dos Parâmetros (.xlsx, .xls, .csv)",
+        type=["xlsx", "xls", "csv"],
         key="parametros",
     )
 
+
+def carregar_ficheiro(uploaded_file):
+    """Função para carregar ficheiros .xlsx, .xls ou .csv automaticamente sem falhar."""
+    name = uploaded_file.name.lower()
+    if name.endswith(".csv"):
+        return pd.read_csv(uploaded_file)
+    try:
+        # Tenta ler como Excel moderno (.xlsx)
+        return pd.read_excel(uploaded_file, engine="openpyxl")
+    except Exception:
+        # Se falhar (ex: ficheiro .xls antigo), tenta com xlrd/default
+        uploaded_file.seek(0)
+        try:
+            return pd.read_excel(uploaded_file, engine="xlrd")
+        except Exception:
+            uploaded_file.seek(0)
+            return pd.read_excel(uploaded_file)
+
+
 if file_formandos and file_parametros:
     try:
-        # 1. Extrair formandos (Coluna K -> índice 10) forçando o engine='openpyxl'
-        df_formandos = pd.read_excel(file_formandos, engine="openpyxl")
+        # 1. Extrair formandos (Coluna K -> índice 10)
+        df_formandos = carregar_ficheiro(file_formandos)
 
         if df_formandos.shape[1] > 10:
             formandos = df_formandos.iloc[:, 10].dropna().tolist()
@@ -45,13 +64,12 @@ if file_formandos and file_parametros:
             )
             formandos = []
 
-        # 2. Processar ficheiro de parâmetros forçando o engine='openpyxl'
-        df_param = pd.read_excel(file_parametros, engine="openpyxl")
+        # 2. Processar ficheiro de parâmetros
+        df_param = carregar_ficheiro(file_parametros)
 
         st.markdown("---")
         st.subheader("⚙️ Seleção das Colunas de Parâmetros")
 
-        # Selecionar quais as colunas do Excel que representam grupos de avaliação
         colunas_selecionadas = st.multiselect(
             "Selecione as colunas que contêm os parâmetros a incluir:",
             options=df_param.columns.tolist(),
@@ -60,7 +78,6 @@ if file_formandos and file_parametros:
 
         parametros_agrupados = []
 
-        # Extração dos parâmetros mantendo o grupo (nome da coluna)
         for col_grupo in colunas_selecionadas:
             itens = df_param[col_grupo].dropna().tolist()
             for item in itens:
@@ -74,7 +91,6 @@ if file_formandos and file_parametros:
                 f" **{len(colunas_selecionadas)} grupos**."
             )
 
-            # Criar a estrutura do DataFrame
             dados = {"Nome do Formando": formandos}
             for p in parametros_agrupados:
                 dados[str(p)] = [None] * len(formandos)
