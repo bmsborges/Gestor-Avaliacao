@@ -124,4 +124,79 @@ if file_formandos and file_parametros:
                 )
 
                 st.markdown(
-                    f"
+                    f"### 📝 Avaliação de: **{formando_selecionado}**"
+                )
+
+                # Formulário para preenchimento dos parâmetros com 1, 3 ou 5
+                with st.form(key=f"form_{formando_selecionado}"):
+                    novas_notas = {}
+                    cols = st.columns(2)
+
+                    for idx, param in enumerate(parametros_selecionados):
+                        col_idx = idx % 2
+                        val_atual = st.session_state.avaliacoes[
+                            formando_selecionado
+                        ].get(param, 1)
+
+                        with cols[col_idx]:
+                            nota = st.selectbox(
+                                label=param,
+                                options=[1, 3, 5],
+                                index=[1, 3, 5].index(val_atual),
+                                key=f"{formando_selecionado}_{param}",
+                            )
+                            novas_notas[param] = nota
+
+                    submetido = st.form_submit_button(
+                        "💾 Guardar Avaliação do Formando"
+                    )
+                    if submetido:
+                        st.session_state.avaliacoes[formando_selecionado] = (
+                            novas_notas
+                        )
+                        st.success(
+                            f"Avaliação guardada com sucesso para"
+                            f" **{formando_selecionado}**!"
+                        )
+
+                # Resumo Geral e Exportação
+                st.markdown("---")
+                st.subheader("📊 Resumo Global da Avaliação Prática")
+
+                dados_resumo = []
+                for f in formandos:
+                    linha = {"Nome do Formando": f}
+                    notas_f = st.session_state.avaliacoes[f]
+                    soma = 0
+                    for p in parametros_selecionados:
+                        val = notas_f.get(p, 1)
+                        linha[p] = val
+                        soma += val
+                    linha["Média Prática"] = (
+                        round(soma / len(parametros_selecionados), 2)
+                        if parametros_selecionados
+                        else 0
+                    )
+                    dados_resumo.append(linha)
+
+                df_resumo = pd.DataFrame(dados_resumo)
+                st.dataframe(df_resumo, use_container_width=True)
+
+                # Exportação para Excel
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                    df_resumo.to_excel(
+                        writer, index=False, sheet_name="Avaliação Prática"
+                    )
+
+                st.download_button(
+                    label="📥 Descarregar Grelha Prática Completa (Excel)",
+                    data=buffer.getvalue(),
+                    file_name="grelha_avaliacao_pratica.xlsx",
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ),
+                )
+
+    except Exception as e:
+        st.error(f"Ocorreu um erro ao processar os ficheiros: {e}")
