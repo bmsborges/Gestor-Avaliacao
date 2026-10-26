@@ -30,8 +30,8 @@ with col2:
 
 if file_formandos and file_parametros:
     try:
-        # 1. Extrair formandos (Coluna K -> índice 10)
-        df_formandos = pd.read_excel(file_formandos)
+        # 1. Extrair formandos (Coluna K -> índice 10) forçando o engine='openpyxl'
+        df_formandos = pd.read_excel(file_formandos, engine="openpyxl")
 
         if df_formandos.shape[1] > 10:
             formandos = df_formandos.iloc[:, 10].dropna().tolist()
@@ -45,8 +45,8 @@ if file_formandos and file_parametros:
             )
             formandos = []
 
-        # 2. Processar ficheiro de parâmetros (Várias Colunas = Vários Grupos)
-        df_param = pd.read_excel(file_parametros)
+        # 2. Processar ficheiro de parâmetros forçando o engine='openpyxl'
+        df_param = pd.read_excel(file_parametros, engine="openpyxl")
 
         st.markdown("---")
         st.subheader("⚙️ Seleção das Colunas de Parâmetros")
@@ -60,9 +60,8 @@ if file_formandos and file_parametros:
 
         parametros_agrupados = []
 
-        # Interpolação/extração dos parâmetros mantendo o grupo (nome da coluna)
+        # Extração dos parâmetros mantendo o grupo (nome da coluna)
         for col_grupo in colunas_selecionadas:
-            # Obtém os parâmetros da coluna ignorando células vazias
             itens = df_param[col_grupo].dropna().tolist()
             for item in itens:
                 parametros_agrupados.append(f"{col_grupo} - {item}")
