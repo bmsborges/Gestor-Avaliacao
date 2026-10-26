@@ -30,21 +30,48 @@ with col2:
 
 
 def carregar_ficheiro(uploaded_file):
-    """Função para carregar ficheiros .xlsx, .xls ou .csv automaticamente sem falhar."""
-    name = uploaded_file.name.lower()
-    if name.endswith(".csv"):
-        return pd.read_csv(uploaded_file)
-    try:
-        # Tenta ler como Excel moderno (.xlsx)
-        return pd.read_excel(uploaded_file, engine="openpyxl")
-    except Exception:
-        # Se falhar (ex: ficheiro .xls antigo), tenta com xlrd/default
-        uploaded_file.seek(0)
+    """Lê ficheiros Excel (.xlsx/.xls), CSV ou ficheiros HTML mascarados como Excel."""
+    # 1. Se for explicitamente CSV
+    if uploaded_file.name.lower().endswith(".csv"):
         try:
-            return pd.read_excel(uploaded_file, engine="xlrd")
+            return pd.read_csv(uploaded_file)
         except Exception:
             uploaded_file.seek(0)
-            return pd.read_excel(uploaded_file)
+            return pd.read_csv(uploaded_file, sep=";")
+
+    # 2. Tenta como Excel moderno (.xlsx) com openpyxl
+    try:
+        return pd.read_excel(uploaded_file, engine="openpyxl")
+    except Exception:
+        pass
+
+    # 3. Tenta como Excel antigo (.xls) com xlrd
+    uploaded_file.seek(0)
+    try:
+        return pd.read_excel(uploaded_file, engine="xlrd")
+    except Exception:
+        pass
+
+    # 4. Tenta como HTML (Muitos sistemas exportam tabelas HTML com extensão .xls/.xlsx)
+    uploaded_file.seek(0)
+    try:
+        tables = pd.read_html(uploaded_file)
+        if tables:
+            return tables[0]
+    except Exception:
+        pass
+
+    # 5. Tenta como CSV/TSV texto (Muitos exportam CSV/TSV mascarados como .xls)
+    uploaded_file.seek(0)
+    try:
+        return pd.read_csv(uploaded_file, sep=None, engine="python")
+    except Exception:
+        pass
+
+    raise ValueError(
+        f"Não foi possível interpretar a estrutura do ficheiro '{uploaded_file.name}'. "
+        "Experimente abri-lo no Excel e guardá-lo explicitamente como 'Livro do Excel (*.xlsx)'."
+    )
 
 
 if file_formandos and file_parametros:
@@ -59,8 +86,7 @@ if file_formandos and file_parametros:
                 formandos = formandos[1:]
         else:
             st.error(
-                "O ficheiro de formandos não tem colunas suficientes (Coluna K"
-                " não encontrada)."
+                f"O ficheiro '{file_formandos.name}' não tem colunas suficientes (Coluna K não encontrada)."
             )
             formandos = []
 
