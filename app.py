@@ -6,7 +6,8 @@ st.set_page_config(page_title="Grelha de Avaliação Prática", layout="wide")
 
 st.title("📋 Grelha de Avaliação Prática por Formando")
 st.write(
-    "Carregue os ficheiros e selecione livremente as colunas pretendidas para o agrupamento dos parâmetros."
+    "Nomes dos formandos extraídos automaticamente da **Coluna K**. "
+    "Selecione livremente as colunas pretendidas para o agrupamento dos parâmetros."
 )
 
 # 1. Carregamento dos ficheiros
@@ -28,7 +29,7 @@ with col2:
 
 
 def carregar_ficheiro(uploaded_file):
-    """Lê ficheiros Excel (.xlsx/.xls/.xlsm) ou CSV sem impor posições fixas."""
+    """Lê ficheiros Excel (.xlsx/.xls/.xlsm) ou CSV."""
     nome = uploaded_file.name.lower()
     if nome.endswith(".csv"):
         try:
@@ -52,40 +53,47 @@ if file_formandos and file_parametros:
         df_formandos = carregar_ficheiro(file_formandos)
         df_param = carregar_ficheiro(file_parametros)
 
-        st.markdown("---")
-        st.subheader("⚙️ Seleção Dinâmica das Colunas para Agrupamento")
+        # 1. Extração FIXA da Coluna K (Índice 10) para os Formandos
+        if df_formandos.shape[1] > 10:
+            formandos_raw = df_formandos.iloc[:, 10].dropna().astype(str).tolist()
+            
+            # Remover o cabeçalho se ele for capturado como o primeiro item
+            seccao_header = str(df_formandos.columns[10])
+            if formandos_raw and formandos_raw[0] == seccao_header:
+                formandos = formandos_raw[1:]
+            else:
+                formandos = formandos_raw
+        else:
+            st.error(
+                f"O ficheiro '{file_formandos.name}' não tem colunas suficientes para chegar à Coluna K."
+            )
+            formandos = []
 
-        # Menu para escolher livremente qualquer coluna de ambos os ficheiros
-        c1, c2, c3 = st.columns(3)
+        st.markdown("---")
+        st.subheader("⚙️ Seleção Dinâmica das Colunas de Parâmetros")
+
+        # Menu para escolher as colunas do 2.º ficheiro
+        c1, c2 = st.columns(2)
 
         with c1:
-            col_formando = st.selectbox(
-                "Coluna com Nomes dos Formandos (Ficheiro 1):",
-                options=df_formandos.columns.tolist(),
-            )
-
-        with c2:
             col_grupo = st.selectbox(
                 "Coluna do Grupo / Categoria (Ficheiro 2):",
                 options=df_param.columns.tolist(),
                 index=0 if len(df_param.columns) > 0 else 0,
             )
 
-        with c3:
+        with c2:
             col_criterio = st.selectbox(
                 "Coluna do Parâmetro / Critério (Ficheiro 2):",
                 options=df_param.columns.tolist(),
                 index=1 if len(df_param.columns) > 1 else 0,
             )
 
-        # 1. Extração da lista de formandos
-        formandos = df_formandos[col_formando].dropna().astype(str).tolist()
-
         # 2. Processamento do agrupamento com base nas colunas escolhidas
         df_selecionado = df_param[[col_grupo, col_criterio]].copy()
         df_selecionado.columns = ["Grupo", "Parametro"]
 
-        # Preencher a hierarquia de categorias caso existam células fundidas ou em bloco no Excel
+        # Preencher a hierarquia de categorias (células fundidas)
         df_selecionado["Grupo"] = df_selecionado["Grupo"].ffill()
         df_selecionado = df_selecionado.dropna(subset=["Parametro"])
 
@@ -109,7 +117,7 @@ if file_formandos and file_parametros:
         # 3. Interface de Avaliação Prática Individual
         if formandos and estrutura_grupos:
             st.success(
-                f"✓ Carregados **{len(formandos)} formandos** e **{len(lista_parametros_chave)} parâmetros** organizados em **{len(estrutura_grupos)} grupos**."
+                f"✓ Carregados **{len(formandos)} formandos** da Coluna K e **{len(lista_parametros_chave)} parâmetros** organizados em **{len(estrutura_grupos)} grupos**."
             )
 
             # Inicializar o estado de sessão para guardas as notas (1, 3 ou 5)
@@ -192,7 +200,7 @@ if file_formandos and file_parametros:
             st.download_button(
                 label="📥 Descarregar Grelha Prática Completa (Excel)",
                 data=buffer.getvalue(),
-                file_name="grelha_avaliacao_dinamica.xlsx",
+                file_name="grelha_avaliacao_final.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
