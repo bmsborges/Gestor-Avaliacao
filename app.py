@@ -7,7 +7,7 @@ st.set_page_config(page_title="Grelha de Avaliação Prática", layout="wide")
 st.title("📋 Grelha de Avaliação Prática por Formando")
 st.write(
     "Nomes dos formandos extraídos da **Coluna K**. "
-    "Selecione as colunas do ficheiro de avaliação que contêm os parâmetros a preencher."
+    "Selecione as colunas onde estão os Grupos e os Parâmetros no ficheiro de avaliação."
 )
 
 # 1. Carregamento dos ficheiros
@@ -70,43 +70,57 @@ if file_formandos and file_parametros:
             formandos = []
 
         st.markdown("---")
-        st.subheader("⚙️ Seleção das Colunas de Parâmetros")
+        st.subheader("⚙️ Mapeamento de Linhas e Colunas (Avaliação Prática)")
 
-        # Seleção múltipla de colunas onde estão os parâmetros
-        colunas_selecionadas = st.multiselect(
-            "Selecione as colunas que contêm os parâmetros (cada coluna será um Grupo):",
-            options=df_param.columns.tolist(),
-            default=df_param.columns.tolist()[:3] if len(df_param.columns) >= 3 else df_param.columns.tolist()
-        )
+        c1, c2 = st.columns(2)
+        with c1:
+            # Por defeito, sugere a 1ª coluna (índice 0)
+            col_grupo = st.selectbox(
+                "1. Em que coluna estão os GRUPOS?",
+                options=df_param.columns.tolist(),
+                index=0 if len(df_param.columns) > 0 else 0
+            )
+        
+        with c2:
+            # Por defeito, sugere a 2ª coluna (índice 1)
+            col_criterio = st.selectbox(
+                "2. Em que coluna estão as CATEGORIAS/PARÂMETROS a preencher?",
+                options=df_param.columns.tolist(),
+                index=1 if len(df_param.columns) > 1 else 0
+            )
+
+        # 2. Processar a estrutura lendo linha a linha
+        df_selecionado = df_param[[col_grupo, col_criterio]].copy()
+        df_selecionado.columns = ["Grupo", "Parametro"]
+
+        # .ffill() resolve o problema das células fundidas/mescladas na coluna dos Grupos
+        df_selecionado["Grupo"] = df_selecionado["Grupo"].ffill()
+        df_selecionado = df_selecionado.dropna(subset=["Parametro"])
 
         estrutura_grupos = {}
         lista_parametros_chave = []
 
-        # Processar as colunas escolhidas
-        for col in colunas_selecionadas:
-            # O nome da coluna é o Grupo
-            grupo = str(col).strip()
-            estrutura_grupos[grupo] = []
-            
-            # As linhas não vazias desta coluna são os critérios
-            itens = df_param[col].dropna().astype(str).tolist()
-            
-            for item in itens:
-                param = item.strip()
-                if param not in estrutura_grupos[grupo]:
-                    estrutura_grupos[grupo].append(param)
-                
-                chave_unica = f"{grupo} -> {param}"
-                if chave_unica not in lista_parametros_chave:
-                    lista_parametros_chave.append(chave_unica)
+        for _, row in df_selecionado.iterrows():
+            grupo = str(row["Grupo"]).strip()
+            param = str(row["Parametro"]).strip()
+
+            if grupo not in estrutura_grupos:
+                estrutura_grupos[grupo] = []
+
+            if param not in estrutura_grupos[grupo]:
+                estrutura_grupos[grupo].append(param)
+
+            chave_unica = f"{grupo} -> {param}"
+            if chave_unica not in lista_parametros_chave:
+                lista_parametros_chave.append(chave_unica)
+
 
         # 3. Interface de Avaliação Prática Individual
         if formandos and estrutura_grupos:
             st.success(
-                f"✓ Carregados **{len(formandos)} formandos** da Coluna K e **{len(lista_parametros_chave)} parâmetros** distribuídos por **{len(colunas_selecionadas)} grupos**."
+                f"✓ Carregados **{len(formandos)} formandos** e **{len(lista_parametros_chave)} parâmetros** organizados em **{len(estrutura_grupos)} grupos**."
             )
 
-            # Inicializar o estado de sessão para guardas as notas (1, 3 ou 5)
             if "avaliacoes" not in st.session_state:
                 st.session_state.avaliacoes = {
                     f: {p: 1 for p in lista_parametros_chave} for f in formandos
@@ -125,7 +139,6 @@ if file_formandos and file_parametros:
                 novas_notas = {}
 
                 for grupo, criterios in estrutura_grupos.items():
-                    # Se o grupo tiver parâmetros, desenha a secção
                     if criterios:
                         st.markdown(f"#### 📂 **{grupo}**")
                         cols = st.columns(2)
@@ -178,7 +191,6 @@ if file_formandos and file_parametros:
             df_resumo = pd.DataFrame(dados_resumo)
             st.dataframe(df_resumo, use_container_width=True)
 
-            # Botão de descarregar ficheiro Excel consolidado
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                 df_resumo.to_excel(
